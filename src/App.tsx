@@ -13,7 +13,8 @@ import {
   Settings,
   Trash2,
 } from 'lucide-react';
-import type { WorkbookPass, WorkbookSettings } from './workbookStore';
+import type { WorkbookPass, WorkbookSettings } from './sheetTypes';
+import * as sheetsApi from './sheetsApi';
 
 type MaterialRow = {
   id: number;
@@ -57,8 +58,10 @@ function localDateString(date = new Date()) {
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
   const [gates, setGates] = useState<GatePass[]>([]);
-  const [workbookName, setWorkbookName] = useState('');
-  const [workbookBusy, setWorkbookBusy] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authConfigured, setAuthConfigured] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [appPassword, setAppPassword] = useState('');
   const [settings, setSettings] = useState<SettingsState>({
     company_name: 'ISLAM MARBLE',
     address: '',
@@ -102,6 +105,27 @@ function App() {
   }).sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
 
   useEffect(() => {
+    const initialize = async () => {
+      try {
+        const status = await sheetsApi.getAuthStatus();
+        setAuthConfigured(status.configured);
+        setAuthenticated(status.authenticated);
+        if (status.authenticated) {
+          const data = await sheetsApi.loadSpreadsheet();
+          setSettings(data.settings);
+          setGates(data.passes);
+        }
+      } catch (error: any) {
+        setAuthenticated(false);
+        setToast(error.message || 'Could not connect to the Google spreadsheet.');
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+    void initialize();
+  }, []);
+
+  useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(''), 3000);
     return () => window.clearTimeout(timer);
@@ -110,34 +134,30 @@ function App() {
   const statusClass = (status: string) =>
     status === 'Returnable' ? 'status-pill returnable' : 'status-pill non-returnable';
 
-  const selectWorkbook = async (action: 'open' | 'create') => {
-    setWorkbookBusy(true);
+  const signIn = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     try {
-      const store = await import('./workbookStore');
-      const result = action === 'open'
-        ? await store.openWorkbookFile()
-        : await store.createWorkbookFile();
-      setWorkbookName(result.fileName);
-      setSettings(result.settings);
-      setGates(result.passes);
-      setForm(createEmptyForm());
-      setEditingId(null);
-      setToast(`Excel file ready: ${result.fileName}`);
+      await sheetsApi.login(appPassword);
+      const data = await sheetsApi.loadSpreadsheet();
+      setSettings(data.settings);
+      setGates(data.passes);
+      setAuthenticated(true);
+      setAppPassword('');
+      setToast('Connected to the Google spreadsheet.');
     } catch (error: any) {
-      if (error?.name !== 'AbortError') {
-        setToast(error.message || 'Could not open the Excel file.');
-      }
-    } finally {
-      setWorkbookBusy(false);
+      setToast(error.message || 'Could not sign in.');
     }
   };
 
-  const requireWorkbook = () => {
-    if (!workbookName) {
-      setToast('Open or create an Excel file first. Gate passes will be saved only in that file.');
-      return false;
+  const signOut = async () => {
+    try {
+      await sheetsApi.logout();
+      setAuthenticated(false);
+      setGates([]);
+      setToast('Signed out.');
+    } catch (error: any) {
+      setToast(error.message || 'Could not sign out.');
     }
-    return true;
   };
 
   const handleFormUpdate = (field: string, value: string) => {
@@ -204,7 +224,6 @@ function App() {
 
   const saveGatePass = async (printAfter = false) => {
     try {
-      if (!requireWorkbook()) return;
       validateForm();
       const payload = {
         ...form,
@@ -222,7 +241,7 @@ function App() {
           })),
       };
 
-      const savedPass = await (await import('./workbookStore')).saveGatePass({
+      const savedPass = await sheetsApi.savePass({
         ...payload,
         id: editingId || 0,
         items: payload.items,
@@ -233,7 +252,7 @@ function App() {
           : [...current, savedPass];
         return next as GatePass[];
       });
-      setToast(`Saved gate pass ${savedPass.gate_pass_number} in ${workbookName}`);
+      setToast(`Saved gate pass ${savedPass.gate_pass_number} in Google Drive.`);
       setEditingId(null);
       setForm(createEmptyForm());
 
@@ -323,7 +342,7 @@ function App() {
   const fillFormForEdit = (id: number) => {
     const pass = gates.find((gate) => gate.id === id);
     if (!pass) {
-      setToast('Gate pass could not be found in the selected Excel file.');
+      setToast('Gate pass could not be found in the Google spreadsheet.');
       return;
     }
     setForm({
@@ -350,29 +369,26 @@ function App() {
   const deleteGatePass = async (id: number) => {
     const confirmed = window.confirm('Delete this gate pass?');
     if (!confirmed) return;
-    if (!requireWorkbook()) return;
     try {
-      await (await import('./workbookStore')).deleteGatePass(id);
+      await sheetsApi.deletePass(id);
       setGates((current) => current.filter((pass) => pass.id !== id));
-      setToast('Gate pass deleted from the Excel file.');
+      setToast('Gate pass deleted from Google Drive.');
     } catch (error: any) {
       setToast(error.message || 'Delete failed.');
     }
   };
 
   const duplicateGatePass = async (id: number) => {
-    if (!requireWorkbook()) return;
     try {
-      const pass = await (await import('./workbookStore')).duplicateGatePass(id);
+      const pass = await sheetsApi.duplicatePass(id);
       setGates((current) => [...current, pass as GatePass]);
-      setToast(`Created ${pass.gate_pass_number} in the Excel file.`);
+      setToast(`Created ${pass.gate_pass_number} in Google Drive.`);
     } catch (error: any) {
       setToast(error.message || 'Duplicate failed.');
     }
   };
 
   const exportExcel = async () => {
-    if (!requireWorkbook()) return;
     try {
       const reportPasses = gates.filter((pass) => {
         const statusMatches = reportFilter === 'returnable'
@@ -384,7 +400,7 @@ function App() {
             && (!reportRange.end || pass.date <= reportRange.end);
         return statusMatches && rangeMatches;
       });
-      await (await import('./workbookStore')).downloadReportWorkbook(reportPasses);
+      await (await import('./reportExport')).downloadReportWorkbook(reportPasses);
       setToast('Excel report downloaded.');
     } catch (error: any) {
       setToast(error.message || 'Excel export failed.');
@@ -393,7 +409,6 @@ function App() {
 
   const saveSettings = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!requireWorkbook()) return;
     try {
       let logoPath = settings.logo_path;
       const logoInput = document.getElementById('logo-upload') as HTMLInputElement | null;
@@ -410,22 +425,12 @@ function App() {
         });
       }
       const nextSettings = { ...settings, logo_path: logoPath };
-      await (await import('./workbookStore')).saveWorkbookSettings(nextSettings);
-      setSettings(nextSettings);
+      const updatedSettings = await sheetsApi.saveSettings(nextSettings);
+      setSettings(updatedSettings);
       if (logoInput) logoInput.value = '';
-      setToast('Settings saved in the selected Excel file.');
+      setToast('Settings saved in Google Drive.');
     } catch (error: any) {
       setToast(error.message || 'Settings update failed.');
-    }
-  };
-
-  const downloadWorkbook = async () => {
-    if (!requireWorkbook()) return;
-    try {
-      await (await import('./workbookStore')).downloadWorkbookCopy();
-      setToast('Excel copy downloaded.');
-    } catch (error: any) {
-      setToast(error.message || 'Could not download Excel file.');
     }
   };
 
@@ -440,6 +445,48 @@ function App() {
     authorizedBy: pass.authorized_by || '—',
     items: pass.items || [],
   });
+
+  if (authLoading) {
+    return <main className="auth-screen"><div className="auth-card">Connecting to the gate-pass app…</div></main>;
+  }
+
+  if (!authConfigured) {
+    return (
+      <main className="auth-screen">
+        <div className="auth-card">
+          <div className="brand-badge">IM</div>
+          <h1>Setup required</h1>
+          <p>Vercel needs an <strong>APP_PASSWORD</strong> with at least 12 characters before this app can be opened.</p>
+          <p>Also configure the Google service-account email and private key in Vercel Environment Variables.</p>
+          {toast && <div className="toast auth-toast">{toast}</div>}
+        </div>
+      </main>
+    );
+  }
+
+  if (!authenticated) {
+    return (
+      <main className="auth-screen">
+        <form className="auth-card" onSubmit={signIn}>
+          <div className="brand-badge">IM</div>
+          <h1>Islam Marble</h1>
+          <p>Sign in to open gate passes saved in the Google Drive spreadsheet.</p>
+          <label>
+            App password
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={appPassword}
+              onChange={(event) => setAppPassword(event.target.value)}
+              required
+            />
+          </label>
+          {toast && <div className="auth-error" role="alert">{toast}</div>}
+          <button className="primary-btn" type="submit">Sign in</button>
+        </form>
+      </main>
+    );
+  }
 
   return (
     <>
@@ -480,15 +527,8 @@ function App() {
               <h1>{activePage === 'dashboard' ? 'Dashboard' : activePage === 'create' ? 'Create Gate Pass' : activePage === 'records' ? 'All Gate Passes' : activePage === 'reports' ? 'Excel Reports' : 'Settings'}</h1>
             </div>
             <div className="top-actions">
-              <span className={workbookName ? 'workbook-label active' : 'workbook-label'}>
-                {workbookName || 'No Excel file selected'}
-              </span>
-              <button className="secondary-btn" type="button" onClick={() => selectWorkbook('open')} disabled={workbookBusy}>
-                <FileSpreadsheet size={16} /> Open Excel
-              </button>
-              <button className="secondary-btn" type="button" onClick={() => selectWorkbook('create')} disabled={workbookBusy}>
-                <Plus size={16} /> New Excel
-              </button>
+              <span className="workbook-label active">Google Drive spreadsheet connected</span>
+              <button className="ghost-btn" type="button" onClick={signOut}>Sign out</button>
               <button className="primary-btn" type="button" onClick={() => setActivePage('create')}>
                 <Plus size={16} /> New Gate Pass
               </button>
@@ -496,11 +536,6 @@ function App() {
           </header>
 
           {toast && <div className="toast">{toast}</div>}
-          {!workbookName && (
-            <div className="workbook-notice">
-              Open or create an Excel file to load and save gate passes. Data stays in that file on your computer.
-            </div>
-          )}
 
           {activePage === 'dashboard' && (
             <section className="page-section">
@@ -747,7 +782,6 @@ function App() {
                   {settings.logo_path && <img className="company-logo" src={settings.logo_path} alt="company logo" />}
                   <div className="settings-actions">
                     <button className="primary-btn" type="submit">Save Settings</button>
-                    <button className="secondary-btn" type="button" onClick={downloadWorkbook}>Download Excel Copy</button>
                   </div>
                 </form>
               </div>

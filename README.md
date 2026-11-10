@@ -1,33 +1,31 @@
 # Islam Marble Gate Pass System
 
-The app runs entirely in the browser. Gate passes, material rows, and company settings are stored in the `.xlsx` file you select. The app does not send records to a database, Google Sheets, or an API.
+The app stores gate passes and company settings directly in the Google spreadsheet configured by `GOOGLE_SHEET_ID`. It does not use a separate database. The spreadsheet must be a native Google Sheet, such as the file at `https://docs.google.com/spreadsheets/d/1jdVg33v88AQlnObha0kxecQW3hah3kGmnUdhfA9ipGU`.
 
-## Use the Excel file
+## Google Sheets access
 
-1. Open the app in Chrome or Edge on `localhost` or an HTTPS deployment.
-2. Choose **New Excel** to create a workbook, or **Open Excel** to select an existing workbook created by this app.
-3. Keep the workbook on your computer and use the same file when returning to the app. After reloading the browser, select the file again.
-4. The app writes every saved, edited, or deleted gate pass directly to that workbook. **Download Excel Copy** creates an extra copy.
+1. In Google Cloud Console, create a project, enable the Google Sheets API, and create a service account with a JSON key.
+2. Share the spreadsheet with the service account's `client_email` and give it **Editor** permission. Do not make the sheet public.
+3. Configure these environment variables in Vercel for Production, Preview, and Development:
+   - `GOOGLE_SHEET_ID`: `1jdVg33v88AQlnObha0kxecQW3hah3kGmnUdhfA9ipGU`
+   - `GOOGLE_SERVICE_ACCOUNT_EMAIL`: the service account's `client_email`
+   - `GOOGLE_PRIVATE_KEY`: the service account's `private_key` (keep newline characters or enter them as `\n`)
+   - `APP_PASSWORD`: a private app sign-in password of at least 12 characters
+4. Redeploy after setting the variables. Open the Vercel URL and sign in with `APP_PASSWORD`.
 
-The workbook contains `Gate Passes` and `Settings` sheets. Keep the header rows unchanged. Other worksheets in the selected file are preserved.
+On its first authenticated request, the app creates `Gate Passes` and `Settings` tabs and adds any missing app columns to their header rows. Existing columns and other tabs are left in place. Keep the app's header names unchanged.
 
-Direct file access requires a browser that supports the File System Access API (Chrome or Edge) and a secure context (`localhost` or HTTPS). Each computer/browser has its own selected file; changes are not shared across devices unless you separately share the Excel file.
-
-## Features
-
-- Gate-pass records and company settings saved in the selected Excel workbook.
-- Excel report export, plus gate-pass print, PDF, and PNG download.
-- Automatic amount calculation (feet × rate).
+The app-password sign-in protects spreadsheet reads and writes. The password is only stored in Vercel environment variables; never commit service-account credentials or `.env` to GitHub.
 
 ## Run locally
 
-```sh
-npm install
-npm run dev
-```
+1. Copy `.env.example` to `.env` and set the service-account email, private key, and a private app password.
+2. Share the spreadsheet with the service account as an Editor.
+3. Run `npm install`, then `npm run dev`.
 
-Open the local URL printed by Vite, then create or open an Excel workbook.
+## Features
 
-## Deploy from GitHub to Vercel
-
-Import the repository into Vercel and deploy it as a Vite app. No API routes, database, Google credentials, or environment variables are required. The deployed site only edits a workbook after the user selects it in their browser.
+- Gate passes and company settings saved in the Google spreadsheet.
+- Excel report export and gate-pass print, PDF, and PNG download.
+- Automatic amount calculation (feet × rate).
+- No separate database.

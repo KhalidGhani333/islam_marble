@@ -13,7 +13,10 @@ dist-ssr
 *.local
 .env
 .env.*
+!.env.example
 .vercel
+/data/
+/server/uploads/
 /export-test.xlsx
 
 # Editor directories and files

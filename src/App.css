@@ -19,7 +19,14 @@ button { cursor: pointer; }
 .top-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .workbook-label { max-width: 220px; overflow: hidden; color: #64748b; font-size: 0.82rem; text-overflow: ellipsis; white-space: nowrap; }
 .workbook-label.active { color: #0f766e; font-weight: 700; }
-.workbook-notice { margin-bottom: 18px; padding: 14px 16px; border: 1px solid #99f6e4; border-radius: 12px; background: #f0fdfa; color: #115e59; }
+.auth-screen { display: grid; min-height: 100vh; place-items: center; padding: 24px; background: #edf2f7; }
+.auth-card { display: flex; width: min(440px, 100%); flex-direction: column; align-items: stretch; gap: 16px; padding: 32px; border: 1px solid #e2e8f0; border-radius: 18px; background: white; box-shadow: 0 16px 36px rgba(31,41,55,.08); }
+.auth-card .brand-badge { flex: 0 0 46px; }
+.auth-card h1 { margin: 0; font-size: 1.7rem; }
+.auth-card p { margin: 0; color: #475569; line-height: 1.55; }
+.auth-card label { display: flex; flex-direction: column; gap: 8px; font-weight: 600; color: #334155; }
+.auth-error { padding: 10px 12px; border-radius: 8px; background: #fef2f2; color: #991b1b; }
+.auth-toast { position: static; }
 .eyebrow { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: #64748b; text-transform: uppercase; }
 .topbar h1 { margin: 6px 0 0; font-size: clamp(1.8rem, 4vw, 2.5rem); }
 .top-actions { display: flex; gap: 12px; }
